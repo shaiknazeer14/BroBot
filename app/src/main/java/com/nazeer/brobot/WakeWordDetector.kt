@@ -8,7 +8,7 @@ import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
 
-class WakeWordDetector(private val context: Context) : RecognitionListener {
+class WakeWordDetector(private val context: Context,private val audioRecorder: AudioRecorder) : RecognitionListener {
 
     private var model: Model? = null
     private var speechService: SpeechService? = null
@@ -79,12 +79,17 @@ class WakeWordDetector(private val context: Context) : RecognitionListener {
     }
 
     private fun onWakeWordDetected() {
-        Log.d("WakeWordDetector", "Executing wake word action...")
-        // TODO: Add your wake word action here
-        // Example:
-        // Start listening for commands
-        // Launch MainActivity
-        // Trigger your AI assistant
+        Log.d("WakeWordDetector", "Hey Bro detected! Starting recording...")
+
+        // Step 1 — Stop Vosk → free the mic
+        stopListening()
+
+        // Step 2 — Start recording
+        audioRecorder.startRecording { filePath ->
+            // Step 3 — Recording complete → resume Vosk
+            Log.d("WakeWordDetector", "Recording complete → file: $filePath")
+            startListening()
+        }
     }
 
     fun stopListening() {

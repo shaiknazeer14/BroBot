@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 class BroBotService : Service() {
 
     private var wakeWordDetector: WakeWordDetector? = null
+    private var audioRecorder: AudioRecorder? = null
 
     companion object {
         const val CHANNEL_ID = "BroBotChannel"
@@ -29,7 +30,13 @@ class BroBotService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed: ${e.message}")
         }
-        wakeWordDetector = WakeWordDetector(this)
+
+        // Create AudioRecorder first
+        audioRecorder = AudioRecorder(this)
+        Log.d(TAG, "AudioRecorder created")
+
+        // Pass AudioRecorder to WakeWordDetector
+        wakeWordDetector = WakeWordDetector(this, audioRecorder!!)
         Log.d(TAG, "WakeWordDetector created")
     }
 
@@ -50,6 +57,9 @@ class BroBotService : Service() {
         Log.d(TAG, "BroBotService onDestroy called")
         wakeWordDetector?.stopListening()
         wakeWordDetector = null
+        audioRecorder?.release()
+        audioRecorder = null
+        Log.d(TAG, "AudioRecorder released")
     }
 
     override fun onBind(intent: Intent?): IBinder? {
