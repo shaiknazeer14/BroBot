@@ -1,4 +1,5 @@
 package com.nazeer.brobot
+
 import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
@@ -6,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import java.io.File
+import java.io.IOException
 
 class AudioRecorder(private val context: Context) {
 
@@ -19,18 +21,19 @@ class AudioRecorder(private val context: Context) {
         const val RECORD_DURATION_MS = 5000L
     }
 
-    fun startRecording(onRecordingComplete: (String) -> Unit) {
+    fun startRecording(
+        onRecordingFinished: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
         if (isRecording) {
             Log.d(TAG, "Already recording — skipping")
             return
         }
 
         try {
-            // Create output file
             val outputFile = File(context.filesDir, "command.mp4")
             outputFilePath = outputFile.absolutePath
 
-            // Initialize MediaRecorder
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(context)
             } else {
@@ -53,16 +56,20 @@ class AudioRecorder(private val context: Context) {
 
             // Auto stop after 5 seconds
             handler.postDelayed({
-                stopRecording(onRecordingComplete)
+                stopRecording(onRecordingFinished, onError)
             }, RECORD_DURATION_MS)
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start recording: ${e.message}")
             isRecording = false
+            onError("Failed to start recording: ${e.message}")
         }
     }
 
-    fun stopRecording(onRecordingComplete: (String) -> Unit) {
+    private fun stopRecording(
+        onRecordingFinished: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
         if (!isRecording) {
             Log.d(TAG, "Not recording — skipping stop")
             return
@@ -76,10 +83,11 @@ class AudioRecorder(private val context: Context) {
             mediaRecorder = null
             isRecording = false
             Log.d(TAG, "Recording stopped → file saved: $outputFilePath")
-            onRecordingComplete(outputFilePath)
+            onRecordingFinished(outputFilePath)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop recording: ${e.message}")
             isRecording = false
+            onError("Failed to stop recording: ${e.message}")
         }
     }
 

@@ -13,6 +13,7 @@ class BroBotService : Service() {
 
     private var wakeWordDetector: WakeWordDetector? = null
     private var audioRecorder: AudioRecorder? = null
+    private var apiClient: ApiClient? = null
 
     companion object {
         const val CHANNEL_ID = "BroBotChannel"
@@ -31,12 +32,14 @@ class BroBotService : Service() {
             Log.e(TAG, "startForeground failed: ${e.message}")
         }
 
-        // Create AudioRecorder first
+        // Create in order
+        apiClient = ApiClient()
+        Log.d(TAG, "ApiClient created")
+
         audioRecorder = AudioRecorder(this)
         Log.d(TAG, "AudioRecorder created")
 
-        // Pass AudioRecorder to WakeWordDetector
-        wakeWordDetector = WakeWordDetector(this, audioRecorder!!)
+        wakeWordDetector = WakeWordDetector(this, audioRecorder!!, apiClient!!)
         Log.d(TAG, "WakeWordDetector created")
     }
 
@@ -55,11 +58,13 @@ class BroBotService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "BroBotService onDestroy called")
-        wakeWordDetector?.stopListening()
+        // Destroy in reverse order
+        wakeWordDetector?.release()
         wakeWordDetector = null
         audioRecorder?.release()
         audioRecorder = null
-        Log.d(TAG, "AudioRecorder released")
+        apiClient = null
+        Log.d(TAG, "All resources released")
     }
 
     override fun onBind(intent: Intent?): IBinder? {
