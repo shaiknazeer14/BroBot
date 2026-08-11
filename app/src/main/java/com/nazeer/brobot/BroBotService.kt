@@ -14,6 +14,8 @@ class BroBotService : Service() {
     private var wakeWordDetector: WakeWordDetector? = null
     private var audioRecorder: AudioRecorder? = null
     private var apiClient: ApiClient? = null
+    private var notificationHelper: NotificationHelper? = null
+    private var volumeController: VolumeController? = null
 
     companion object {
         const val CHANNEL_ID = "BroBotChannel"
@@ -33,13 +35,25 @@ class BroBotService : Service() {
         }
 
         // Create in order
+        notificationHelper = NotificationHelper(this)
+        Log.d(TAG, "NotificationHelper created")
+
+        volumeController = VolumeController(this)
+        Log.d(TAG, "VolumeController created")
+
         apiClient = ApiClient()
         Log.d(TAG, "ApiClient created")
 
         audioRecorder = AudioRecorder(this)
         Log.d(TAG, "AudioRecorder created")
 
-        wakeWordDetector = WakeWordDetector(this, audioRecorder!!, apiClient!!)
+        wakeWordDetector = WakeWordDetector(
+            this,
+            audioRecorder!!,
+            apiClient!!,
+            notificationHelper!!,
+            volumeController!!
+        )
         Log.d(TAG, "WakeWordDetector created")
     }
 
@@ -58,12 +72,13 @@ class BroBotService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "BroBotService onDestroy called")
-        // Destroy in reverse order
         wakeWordDetector?.release()
         wakeWordDetector = null
         audioRecorder?.release()
         audioRecorder = null
         apiClient = null
+        notificationHelper = null
+        volumeController = null
         Log.d(TAG, "All resources released")
     }
 

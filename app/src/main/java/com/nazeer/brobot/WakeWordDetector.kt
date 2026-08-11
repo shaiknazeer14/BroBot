@@ -12,14 +12,18 @@ import org.vosk.android.StorageService
 class WakeWordDetector(
     private val context: Context,
     private val audioRecorder: AudioRecorder,
-    private val apiClient: ApiClient
+    private val apiClient: ApiClient,
+    private val notificationHelper: NotificationHelper,
+    private val volumeController: VolumeController
 ) : RecognitionListener {
 
     private var model: Model? = null
     private var speechService: SpeechService? = null
-
-    // Prevent multiple recordings
     private var isRecording = false
+
+    companion object {
+        const val TAG = "WakeWordDetector"
+    }
 
     init {
         loadModel()
@@ -27,153 +31,124 @@ class WakeWordDetector(
 
     private fun loadModel() {
         StorageService.unpack(
-            context,
-            "model",
-            "model",
+            context, "model", "model",
             { loadedModel ->
                 model = loadedModel
-                Log.d("WakeWordDetector", "Model loaded successfully")
+                Log.d(TAG, "Model loaded successfully")
                 startListening()
             },
             { exception ->
-                Log.e(
-                    "WakeWordDetector",
-                    "Failed to load model: ${exception.message}"
-                )
+                Log.e(TAG, "Failed to load model: ${exception.message}")
             }
         )
     }
 
     fun startListening() {
         if (isRecording) return
-
         try {
             if (model == null) {
-                Log.e("WakeWordDetector", "Model not loaded yet.")
+                Log.e(TAG, "Model not loaded yet")
                 return
             }
-
             speechService?.shutdown()
-
             val recognizer = Recognizer(model, 16000.0f)
             speechService = SpeechService(recognizer, 16000.0f)
-
             speechService?.startListening(this)
-
-            Log.d("WakeWordDetector", "Listening started")
-
+            Log.d(TAG, "Listening started")
         } catch (e: Exception) {
-            Log.e(
-                "WakeWordDetector",
-                "Failed to start listening: ${e.message}"
-            )
+            Log.e(TAG, "Failed to start listening: ${e.message}")
         }
     }
 
     override fun onPartialResult(hypothesis: String?) {
-        Log.d("WakeWordDetector", "Partial: $hypothesis")
-
         val text = extractText(hypothesis)
-
         if (!isRecording && text.contains("hey bro", ignoreCase = true)) {
-            Log.d("WakeWordDetector", "Wake word detected (Partial)")
+            Log.d(TAG, "Wake word detected in partial")
             onWakeWordDetected()
         }
     }
 
     override fun onResult(hypothesis: String?) {
-        Log.d("WakeWordDetector", "Result: $hypothesis")
-
+        Log.d(TAG, "Result: $hypothesis")
         val text = extractText(hypothesis)
-
         if (!isRecording && text.contains("hey bro", ignoreCase = true)) {
-            Log.d("WakeWordDetector", "Wake word detected (Final)")
+            Log.d(TAG, "Wake word detected in result")
             onWakeWordDetected()
         }
     }
 
     override fun onFinalResult(hypothesis: String?) {
-        Log.d("WakeWordDetector", "Final Result: $hypothesis")
+        Log.d(TAG, "Final: $hypothesis")
     }
 
     override fun onError(exception: Exception?) {
-        Log.e(
-            "WakeWordDetector",
-            "Recognition Error: ${exception?.message}"
-        )
-
-        if (!isRecording) {
-            startListening()
-        }
+        Log.e(TAG, "Error: ${exception?.message}")
+        if (!isRecording) startListening()
     }
 
     override fun onTimeout() {
-        Log.d("WakeWordDetector", "Recognition Timeout")
-
-        if (!isRecording) {
-            startListening()
-        }
+        Log.d(TAG, "Timeout — restarting")
+        if (!isRecording) startListening()
     }
 
-    /**
-     * Called when wake word is detected.
-     */
     private fun onWakeWordDetected() {
-
         if (isRecording) return
-
         isRecording = true
+        Log.d(TAG, "Hey Bro detected! Starting recording...")
 
-        Log.d("WakeWordDetector", "Hey Bro detected!")
+        // Show listening notification
+        notificationHelper.showListening()
 
-        // Stop Vosk so microphone becomes free
         stopListening()
 
-        // Start recording user's query
+        // Show recording notification
+        notificationHelper.showRecording()
+
         audioRecorder.startRecording(
-
             onRecordingFinished = { filePath ->
+                Log.d(TAG, "Recording finished: $filePath")
 
-                Log.d(
-                    "WakeWordDetector",
-                    "Recording finished: $filePath"
-                )
+                // Check if it's a volume command first — no backend needed
+                val lastTranscript = filePath // placeholder — will be filled after Whisper
+
+                // Show processing notification
+                notificationHelper.showProcessing()
 
                 apiClient.sendAudio(
-
                     filePath = filePath,
-
                     onSuccess = { response ->
+                        Log.d(TAG, "Backend response: $response")
 
-                        Log.d(
-                            "WakeWordDetector",
-                            "Backend Response: $response"
-                        )
+                        // Parse response and check for volume command
+                        try {
+                            val json = org.json.JSONObject(response)
+                            val note = json.optString("note", "")
+                            val message = json.optString("message", "Done!")
+
+                            // Check if it's a volume command
+                            if (volumeController.handleVolumeCommand(note)) {
+                                notificationHelper.showSuccess("Volume adjusted!", note)
+                            } else {
+                                notificationHelper.showSuccess(message, note)
+                            }
+                        } catch (e: Exception) {
+                            notificationHelper.showSuccess("Done!", response)
+                        }
 
                         isRecording = false
                         startListening()
                     },
-
                     onError = { error ->
-
-                        Log.e(
-                            "WakeWordDetector",
-                            "Backend Error: $error"
-                        )
-
+                        Log.e(TAG, "Backend error: $error")
+                        notificationHelper.showError(error)
                         isRecording = false
                         startListening()
                     }
                 )
             },
-
             onError = { error ->
-
-                Log.e(
-                    "WakeWordDetector",
-                    "Recording Error: $error"
-                )
-
+                Log.e(TAG, "Recording error: $error")
+                notificationHelper.showError("Recording failed: $error")
                 isRecording = false
                 startListening()
             }
@@ -181,52 +156,29 @@ class WakeWordDetector(
     }
 
     fun stopListening() {
-
         speechService?.stop()
         speechService?.shutdown()
         speechService = null
-
-        Log.d("WakeWordDetector", "Listening stopped")
+        Log.d(TAG, "Listening stopped")
     }
 
-    /**
-     * Release resources.
-     * Call from Activity/Service onDestroy().
-     */
     fun release() {
-
         stopListening()
-
         model?.close()
         model = null
-
-        Log.d("WakeWordDetector", "Resources released")
+        Log.d(TAG, "Resources released")
     }
 
-    /**
-     * Extract recognized text from Vosk JSON.
-     */
     private fun extractText(result: String?): String {
-
         if (result.isNullOrEmpty()) return ""
-
         return try {
-
             val json = JSONObject(result)
-
             when {
                 json.has("partial") -> json.getString("partial")
                 json.has("text") -> json.getString("text")
                 else -> ""
             }
-
         } catch (e: Exception) {
-
-            Log.e(
-                "WakeWordDetector",
-                "JSON Parse Error: ${e.message}"
-            )
-
             ""
         }
     }
